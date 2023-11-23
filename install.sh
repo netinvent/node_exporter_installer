@@ -181,7 +181,7 @@ setup_env() {
 
   # Use service or environment location depending on systemd/openrc
   case $INIT_SYSTEM in
-    openrc)
+    openrc|upstart)
       $SUDO mkdir -p /etc/node_exporter
       FILE_NODE_EXPORTER_SERVICE=/etc/init.d/node_exporter
       ;;
@@ -268,6 +268,11 @@ verify_init_system() {
     INIT_SYSTEM=openrc
     return
   fi
+  # UpStart
+  if [ -x /sbin/upstart ]; then
+    INIT_SYSTEM=upstart
+    return
+  fi
   # systemd
   if [ -x /bin/systemctl ] || type systemctl > /dev/null 2>&1; then
     INIT_SYSTEM=systemd
@@ -275,7 +280,7 @@ verify_init_system() {
   fi
 
   # Not supported
-  fatal 'No supported init system found (OpenRC or systemd)'
+  fatal 'No supported init system found (OpenRC, upstart or systemd)'
 }
 
 # Check command is installed
@@ -705,7 +710,7 @@ EOF
 # Write service file
 create_service_file() {
   case $INIT_SYSTEM in
-    openrc) create_openrc_service_file ;;
+    openrc|upstart) create_openrc_service_file ;;
     systemd) create_systemd_service_file ;;
     *) fatal "Unknown init system '$INIT_SYSTEM'" ;;
   esac
@@ -777,7 +782,7 @@ setup_selinux() {
 service_enable_and_start() {
   [ "$INSTALL_NODE_EXPORTER_SKIP_ENABLE" = true ] && return
   case $INIT_SYSTEM in
-    openrc) openrc_enable ;;
+    openrc|upstart) openrc_enable ;;
     systemd) systemd_enable ;;
     *) fatal "Unknown init system '$INIT_SYSTEM'" ;;
   esac
@@ -789,7 +794,7 @@ service_enable_and_start() {
     return
   fi
   case $INIT_SYSTEM in
-    openrc) openrc_start ;;
+    openrc|upstart) openrc_start ;;
     systemd) systemd_start ;;
     *) fatal "Unknown init system '$INIT_SYSTEM'" ;;
   esac
