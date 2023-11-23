@@ -181,10 +181,12 @@ setup_env() {
 
   # Use service or environment location depending on systemd/openrc
   case $INIT_SYSTEM in
-    openrc|upstart|initv)
+    openrc)
       $SUDO mkdir -p /etc/node_exporter
       FILE_NODE_EXPORTER_SERVICE=/etc/init.d/node_exporter
       ;;
+    upstart) 
+      FILE_NODE_EXPORTER_SERVICE=/etc/init/node_exporter.conf ;;
     systemd)
       FILE_NODE_EXPORTER_SERVICE=$SYSTEMD_DIR/$SERVICE_NODE_EXPORTER
       ;;
@@ -269,13 +271,8 @@ verify_init_system() {
     return
   fi
   # UpStart
-  if [ -x /sbin/upstart ]; then
-    INIT_SYSTEM=upstart
-    return
-  fi
-  # Generic initv (also detects upstart in ubuntu 14.04)
   if [ -x /sbin/init ]; then
-    INIT_SYSTEM=initv
+    INIT_SYSTEM=upstart
     return
   fi
   # systemd
@@ -712,10 +709,26 @@ EOF
   fi
 }
 
+# Write upstart service file
+create_upstart_service_file() {
+  info "upstart: Creating service file '$FILE_NODE_EXPORTER_SERVICE'"
+  $SUDO tee "$FILE_NODE_EXPORTER_SERVICE" > /dev/null << EOF
+description "Node exporter"
+start on runlevel [2345]
+stop on runlevel [!2345]
+
+respawn
+respawn limit unlimited
+
+exec $BIN_DIR/node_exporter $CMD_NODE_EXPORTER_EXEC
+EOF
+}
+
 # Write service file
 create_service_file() {
   case $INIT_SYSTEM in
-    openrc|upstart|initv) create_openrc_service_file ;;
+    openrc) create_openrc_service_file ;;
+    upstart) create_upstart_service_file ;;
     systemd) create_systemd_service_file ;;
     *) fatal "Unknown init system '$INIT_SYSTEM'" ;;
   esac
@@ -756,6 +769,15 @@ openrc_start() {
   rc-service --quiet node_exporter status || fatal "openrc: Error starting node_exporter"
 }
 
+# Start upstart service
+upstart_start() {
+  info "upstart: Starting node_exporter"
+  $SUDO "initctl start node_exporter"
+  # Wait an arbitrary amount of time for service to load
+  sleep 1
+  initctl status node_exporter || fatal "upstart: Error starting node_exporter"
+}
+
 # relabel to executable if SElinux is installed
 setup_selinux() {
   if can_skip_selinux; then
@@ -787,8 +809,9 @@ setup_selinux() {
 service_enable_and_start() {
   [ "$INSTALL_NODE_EXPORTER_SKIP_ENABLE" = true ] && return
   case $INIT_SYSTEM in
-    openrc|upstart|initv) openrc_enable ;;
+    openrc) openrc_enable ;;
     systemd) systemd_enable ;;
+    upstart) ;;
     *) fatal "Unknown init system '$INIT_SYSTEM'" ;;
   esac
 
@@ -799,7 +822,8 @@ service_enable_and_start() {
     return
   fi
   case $INIT_SYSTEM in
-    openrc|upstart|initv) openrc_start ;;
+    openrc) openrc_start ;;
+    upstart) upstart_start ;;
     systemd) systemd_start ;;
     *) fatal "Unknown init system '$INIT_SYSTEM'" ;;
   esac
